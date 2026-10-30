@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Encuentra tu estrella</title>
+<style>
+  :root {
+    --bg: #04050a;
+    --fg: #eef0f7;
+    --muted: #9aa0b8;
+    --gold: #ffcf6b;
+    --panel: rgba(6, 8, 16, 0.78);
+    --line: rgba(255, 255, 255, 0.14);
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); overflow: hidden;
+    font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  video, canvas { position: fixed; inset: 0; width: 100%; height: 100%; }
+  video { object-fit: cover; opacity: 0.85; }
+  .screen {
+    position: fixed; inset: 0; z-index: 5;
+    display: grid; align-content: center; gap: 14px;
+    padding: 24px max(20px, env(safe-area-inset-left, 0px));
+    background: radial-gradient(ellipse at 50% 30%, #12162a 0%, var(--bg) 70%);
+  }
+  h1 { margin: 0; font-size: 30px; line-height: 1.1; letter-spacing: -0.01em; }
+  p { margin: 0; color: var(--muted); max-width: 46ch; }
+  label { font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+  select, button {
+    font: inherit; color: var(--fg); background: #0d1020; border: 1px solid var(--line);
+    border-radius: 12px; padding: 12px 14px; width: 100%;
+  }
+  button.primary { background: var(--gold); color: #1a1405; border: 0; font-weight: 700; font-size: 17px; }
+  .small { font-size: 13px; }
+  #hud { position: fixed; inset: 0; z-index: 3; pointer-events: none; }
+  #hud .top { position: absolute; top: calc(10px + env(safe-area-inset-top, 0px)); left: 12px; right: 12px; pointer-events: auto; }
+  #hud .panel {
+    position: absolute; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+    background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+    padding: 12px 14px; display: grid; gap: 4px; pointer-events: auto;
+    backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  }
+  #tname { font-weight: 700; font-size: 17px; color: var(--gold); }
+  #tinfo, #tnear { font-size: 14px; }
+  #status { font-size: 12px; color: var(--muted); }
+  details { margin-top: 4px; font-size: 13px; color: var(--muted); }
+  details label { display: block; margin-top: 8px; }
+  input[type=range] { width: 100%; }
+  #rotate { position: fixed; inset: 0; z-index: 9; display: grid; place-items: center; background: var(--bg); font-size: 18px; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<video id="cam" playsinline muted autoplay></video>
+<canvas id="sky"></canvas>
+
+<div id="start" class="screen">
+  <h1>Encuentra tu estrella</h1>
+  <p>Prueba: apunta el móvil al cielo y te guiamos hasta una estrella real del catálogo Gaia.</p>
+  <p class="small">Para comprobar la precisión, apunta primero a una estrella brillante que veas (por ejemplo Sirio) y mira si su etiqueta cae encima.</p>
+  <button id="go" class="primary" type="button">Empezar</button>
+  <p class="small">Te pedirá permiso para la cámara, la ubicación y los sensores de movimiento. Nada sale del móvil.</p>
+</div>
+
+<div id="hud" hidden>
+  <div class="top"><select id="target" aria-label="Estrella a buscar"></select></div>
+  <div class="panel">
+    <div id="tname"></div>
+    <div id="tinfo"></div>
+    <div id="tnear"></div>
+    <div id="status"></div>
+    <details>
+      <summary>Ajustes de precisión</summary>
+      <label for="offset">Corrección de brújula: <span id="offsetVal">0°</span></label>
+      <input id="offset" type="range" min="-40" max="40" step="1" value="0">
+      <label for="fov">Campo de visión de la cámara: <span id="fovVal">62°</span></label>
+      <input id="fov" type="range" min="40" max="90" step="1" value="62">
+    </details>
+  </div>
+</div>
+
+<div id="rotate" hidden>Pon el móvil en vertical</div>
+
+<script>
+(() => {
+  const D2R = Math.PI / 180, R2D = 180 / Math.PI;
+
+  // Gaia DR3 stars assigned by the Pocket Planets name hash, plus bright reference stars (J2000).
+  const TARGETS = [
+    { id: 'fernando', name: 'Estrella de Fernando', detail: 'Gaia DR3 2938721734658079872 · 711 años luz · magnitud 18,3', ra: 98.5921, dec: -20.9355, gaia: true },
+    { id: 'martina', name: 'Estrella de Martina', detail: 'Gaia DR3 5860410174531446784 · 1.491 años luz · magnitud 16,9', ra: 180.7507, dec: -67.0833, gaia: true },
+  ];
+  const BRIGHT = [
+    ['Sirio', 101.287, -16.716], ['Canopo', 95.988, -52.696], ['Arturo', 213.915, 19.182], ['Vega', 279.234, 38.784],
+    ['Capella', 79.172, 45.998], ['Rigel', 78.634, -8.202], ['Proción', 114.825, 5.225], ['Betelgeuse', 88.793, 7.407],
+    ['Altair', 297.696, 8.868], ['Aldebarán', 68.980, 16.509], ['Antares', 247.352, -26.432], ['Espiga', 201.298, -11.161],
+    ['Pólux', 116.329, 28.026], ['Deneb', 310.358, 45.280], ['Régulo', 152.093, 11.967], ['Polar', 37.955, 89.264],
+    ['Fomalhaut', 344.413, -29.622], ['Achernar', 24.429, -57.237], ['Ácrux', 186.650, -63.099],
+  ].map(([name, ra, dec]) => ({ name, ra, dec }));
+  BRIGHT.forEach(b => TARGETS.push({ id: 'b-' + b.name, name: b.name, detail: 'Estrella brillante de referencia, visible a simple vista', ra: b.ra, dec: b.dec }));
+
+  const $ = id => document.getElementById(id);
+  const sel = $('target');
+  TARGETS.forEach(t => {
+    const o = document.createElement('option');
+    o.value = t.id;
+    o.textContent = t.gaia ? t.name : 'Referencia: ' + t.name;
+    sel.append(o);
+  });
+
+  const state = {
+    lat: 40.4168, lon: -3.7038, geo: 'pendiente',
+    sa: 0, ca: 1, b: 90, g: 0, haveOrient: false, absolute: false,
+    offset: 0, fov: 62, target: TARGETS[0],
+  };
+
+  // ---------- Astronomy ----------
+  function lstDeg(date, lon) {
+    const jd = date.getTime() / 86400000 + 2440587.5;
+    const d = jd - 2451545.0;
+    return (((280.46061837 + 360.98564736629 * d + lon) % 360) + 360) % 360;
+  }
+  function altAz(ra, dec, date) {
+    const H = (lstDeg(date, state.lon) - ra) * D2R;
+    const phi = state.lat * D2R, del = dec * D2R;
+    const alt = Math.asin(Math.sin(phi) * Math.sin(del) + Math.cos(phi) * Math.cos(del) * Math.cos(H));
+    const az = Math.atan2(Math.sin(H), Math.cos(H) * Math.sin(phi) - Math.tan(del) * Math.cos(phi));
+    return { alt: alt * R2D, az: ((az * R2D + 180) % 360 + 360) % 360 };
+  }
+  function nextRise(t) {
+    const now = Date.now();
+    let prev = altAz(t.ra, t.dec, new Date(now)).alt;
+    for (let m = 5; m <= 24 * 60; m += 5) {
+      const d = new Date(now + m * 60000);
+      const a = altAz(t.ra, t.dec, d).alt;
+      if (prev <= 0 && a > 0) return d;
+      prev = a;
+    }
+    return null;
+  }
+  function angSep(a, b) {
+    const c = Math.sin(a.dec * D2R) * Math.sin(b.dec * D2R) + Math.cos(a.dec * D2R) * Math.cos(b.dec * D2R) * Math.cos((a.ra - b.ra) * D2R);
+    return Math.acos(Math.min(1, Math.max(-1, c))) * R2D;
+  }
+  const DIRS = ['N', 'NE', 'E', 'SE', 'S', 'SO', 'O', 'NO'];
+  const dirName = az => DIRS[Math.round(az / 45) % 8];
+
+  // ---------- Device orientation ----------
+  function rotMatrix(aDeg, bDeg, gDeg) {
+    const a = aDeg * D2R, b = bDeg * D2R, g = gDeg * D2R;
+    const ca = Math.cos(a), sa = Math.sin(a), cb = Math.cos(b), sb = Math.sin(b), cg = Math.cos(g), sg = Math.sin(g);
+    return [
+      [ca * cg - sa * sb * sg, -sa * cb, ca * sg + sa * sb * cg],
+      [sa * cg + ca * sb * sg, ca * cb, sa * sg - ca * sb * cg],
+      [-cb * sg, sb, cb * cg],
+    ];
+  }
+  // World frame: x = East, y = North, z = Up. Device frame: x right, y top, z out of the screen.
+  function toDevice(R, w) {
+    return [
+      R[0][0] * w[0] + R[1][0] * w[1] + R[2][0] * w[2],
+      R[0][1] * w[0] + R[1][1] * w[1] + R[2][1] * w[2],
+      R[0][2] * w[0] + R[1][2] * w[1] + R[2][2] * w[2],
+    ];
+  }
+  function worldVec(alt, az) {
+    const a = alt * D2R, z = az * D2R;
+    return [Math.cos(a) * Math.sin(z), Math.cos(a) * Math.cos(z), Math.sin(a)];
+  }
+
+  function onOrient(e, absolute) {
+    let a = e.alpha;
+    if (typeof e.webkitCompassHeading === 'number' && !isNaN(e.webkitCompassHeading)) {
+      a = 360 - e.webkitCompassHeading;
+      absolute = true;
+    }
+    if (a == null || e.beta == null || e.gamma == null) return;
+    const k = state.haveOrient ? 0.25 : 1;
+    state.sa += (Math.sin(a * D2R) - state.sa) * k;
+    state.ca += (Math.cos(a * D2R) - state.ca) * k;
+    state.b += (e.beta - state.b) * k;
+    state.g += (e.gamma - state.g) * k;
+    state.haveOrient = true;
+    state.absolute = absolute;
+  }
+
+  // ---------- Start ----------
+  $('go').addEventListener('click', async () => {
+    try {
+      if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+        await DeviceOrientationEvent.requestPermission();
+      }
+    } catch (_) { /* denied: handled by the status line */ }
+    if ('ondeviceorientationabsolute' in window) {
+      window.addEventListener('deviceorientationabsolute', e => onOrient(e, true));
+    } else {
+      window.addEventListener('deviceorientation', e => onOrient(e, e.absolute === true));
+    }
+
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        p => { state.lat = p.coords.latitude; state.lon = p.coords.longitude; state.geo = 'ok'; refreshInfo(); },
+        () => { state.geo = 'denegada'; refreshInfo(); },
+        { enableHighAccuracy: false, timeout: 15000 }
+      );
+    } else {
+      state.geo = 'no disponible';
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
+      $('cam').srcObject = stream;
+    } catch (_) {
+      state.camError = true;
+    }
+
+    $('start').hidden = true;
+    $('hud').hidden = false;
+    refreshInfo();
+    requestAnimationFrame(draw);
+  });
+
+  sel.addEventListener('change', () => { state.target = TARGETS.find(t => t.id === sel.value); refreshInfo(); });
+  $('offset').addEventListener('input', e => { state.offset = +e.target.value; $('offsetVal').textContent = state.offset + '°'; });
+  $('fov').addEventListener('input', e => { state.fov = +e.target.value; $('fovVal').textContent = state.fov + '°'; });
+
+  function refreshInfo() {
+    const t = state.target;
+    const p = altAz(t.ra, t.dec, new Date());
+    $('tname').textContent = t.name;
+    let info = `${t.detail}. `;
+    if (p.alt > 0) {
+      info += `Ahora está a ${Math.round(p.alt)}° sobre el horizonte, hacia el ${dirName(p.az)} (${Math.round(p.az)}°).`;
+    } else {
+      const r = nextRise(t);
+      info += r
+        ? `Ahora está bajo el horizonte. Sale hoy a las ${r.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}.`
+        : 'Desde tu ubicación nunca sube sobre el horizonte.';
+    }
+    $('tinfo').textContent = info;
+    if (t.gaia) {
+      let best = null;
+      BRIGHT.forEach(b => { const s = angSep(t, b); if (!best || s < best.s) best = { b, s }; });
+      $('tnear').textContent = `No se ve a simple vista. Está a ${Math.round(best.s)}° de ${best.b.name}, la estrella brillante más cercana.`;
+    } else {
+      $('tnear').textContent = '';
+    }
+    const parts = [];
+    parts.push(state.geo === 'ok' ? 'Ubicación: OK' : `Ubicación ${state.geo} (uso Madrid)`);
+    parts.push(state.haveOrient ? (state.absolute ? 'Brújula: OK' : 'Brújula relativa (puede apuntar mal)') : 'Brújula: sin datos');
+    if (state.camError) parts.push('Cámara no disponible');
+    $('status').textContent = parts.join(' · ');
+  }
+  setInterval(() => { if (!$('hud').hidden) refreshInfo(); }, 5000);
+
+  // ---------- Draw ----------
+  const cv = $('sky');
+  const ctx = cv.getContext('2d');
+
+  function project(R, alt, az, W, H, f) {
+    const v = toDevice(R, worldVec(alt, az));
+    if (v[2] >= -0.02) return { front: false, v };
+    return { front: true, v, x: W / 2 + f * v[0] / -v[2], y: H / 2 - f * v[1] / -v[2] };
+  }
+
+  function draw(now) {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const W = innerWidth, H = innerHeight;
+    $('rotate').hidden = H >= W;
+    if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) {
+      cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+    }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+
+    if (!state.haveOrient) {
+      ctx.fillStyle = '#eef0f7';
+      ctx.font = '16px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('Esperando los sensores de movimiento…', W / 2, H / 2);
+      requestAnimationFrame(draw);
+      return;
+    }
+
+    const a = Math.atan2(state.sa, state.ca) * R2D + state.offset;
+    const R = rotMatrix(a, state.b, state.g);
+    const f = (H / 2) / Math.tan((state.fov / 2) * D2R);
+    const date = new Date();
+
+    // Horizon line and cardinal points.
+    ctx.strokeStyle = 'rgba(120, 200, 255, 0.45)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    let pen = false;
+    for (let az = 0; az <= 360; az += 3) {
+      const p = project(R, 0, az, W, H, f);
+      if (p.front && Math.abs(p.x) < W * 3 && Math.abs(p.y) < H * 3) {
+        pen ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y);
+        pen = true;
+      } else {
+        pen = false;
+      }
+    }
+    ctx.stroke();
+    ctx.font = 'bold 15px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    [['N', 0], ['E', 90], ['S', 180], ['O', 270]].forEach(([label, az]) => {
+      const p = project(R, 0, az, W, H, f);
+      if (p.front) { ctx.fillStyle = 'rgba(120, 200, 255, 0.9)'; ctx.fillText(label, p.x, p.y - 8); }
+    });
+
+    // Bright reference stars.
+    ctx.font = '13px system-ui, sans-serif';
+    ctx.textAlign = 'left';
+    BRIGHT.forEach(b => {
+      const h = altAz(b.ra, b.dec, date);
+      const p = project(R, h.alt, h.az, W, H, f);
+      if (!p.front || p.x < -50 || p.x > W + 50 || p.y < -50 || p.y > H + 50) return;
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(p.x, p.y, 7, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = h.alt > 0 ? 'rgba(255, 255, 255, 0.95)' : 'rgba(255, 255, 255, 0.45)';
+      ctx.fillText(b.name + (h.alt > 0 ? '' : ' (bajo el horizonte)'), p.x + 11, p.y + 4);
+    });
+
+    // Target.
+    const t = state.target;
+    const th = altAz(t.ra, t.dec, date);
+    const p = project(R, th.alt, th.az, W, H, f);
+    const pulse = 0.5 + 0.5 * Math.sin(now / 300);
+    if (p.front && p.x > 20 && p.x < W - 20 && p.y > 70 && p.y < H - 150) {
+      ctx.strokeStyle = '#ffcf6b';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.arc(p.x, p.y, 16 + pulse * 8, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI * 2); ctx.fillStyle = '#ffcf6b'; ctx.fill();
+      ctx.font = 'bold 15px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(t.gaia ? 'Tu estrella está aquí' : t.name, p.x, p.y - 30);
+      if (th.alt < 0) { ctx.font = '13px system-ui, sans-serif'; ctx.fillText('(ahora bajo el horizonte)', p.x, p.y + 40); }
+    } else {
+      // Off screen: arrow on an ellipse around the center pointing toward the target.
+      let dx = p.v[0], dy = -p.v[1];
+      if (Math.hypot(dx, dy) < 1e-3) { dx = 0; dy = 1; }
+      const ang = Math.atan2(dy, dx);
+      const cx = W / 2 + Math.cos(ang) * W * 0.36;
+      const cy = H / 2 - 40 + Math.sin(ang) * H * 0.3;
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(ang);
+      ctx.fillStyle = `rgba(255, 207, 107, ${0.65 + 0.35 * pulse})`;
+      ctx.beginPath(); ctx.moveTo(22, 0); ctx.lineTo(-12, -14); ctx.lineTo(-6, 0); ctx.lineTo(-12, 14); ctx.closePath(); ctx.fill();
+      ctx.restore();
+      ctx.font = '14px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#ffcf6b';
+      ctx.fillText('Gira el móvil hacia la flecha', W / 2, H / 2 - 40);
+    }
+
+    requestAnimationFrame(draw);
+  }
+})();
+</script>
+</body>
+</html>
