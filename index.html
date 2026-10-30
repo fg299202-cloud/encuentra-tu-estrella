@@ -3,22 +3,22 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Encuentra tu estrella</title>
+<title>Reclama tu estrella</title>
 <style>
   :root {
     --bg: #04050a;
     --fg: #eef0f7;
     --muted: #9aa0b8;
     --gold: #ffcf6b;
-    --panel: rgba(6, 8, 16, 0.78);
+    --panel: rgba(6, 8, 16, 0.8);
     --line: rgba(255, 255, 255, 0.14);
     color-scheme: dark;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); overflow: hidden;
-    font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; -webkit-user-select: none; user-select: none; }
   video, canvas { position: fixed; inset: 0; width: 100%; height: 100%; }
-  video { object-fit: cover; opacity: 0.85; }
+  video { object-fit: cover; opacity: 0.8; }
   .screen {
     position: fixed; inset: 0; z-index: 5;
     display: grid; align-content: center; gap: 14px;
@@ -26,28 +26,45 @@
     background: radial-gradient(ellipse at 50% 30%, #12162a 0%, var(--bg) 70%);
   }
   h1 { margin: 0; font-size: 30px; line-height: 1.1; letter-spacing: -0.01em; }
+  h2 { margin: 0; font-size: 22px; line-height: 1.15; color: var(--gold); }
   p { margin: 0; color: var(--muted); max-width: 46ch; }
-  label { font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
-  select, button {
+  button {
     font: inherit; color: var(--fg); background: #0d1020; border: 1px solid var(--line);
-    border-radius: 12px; padding: 12px 14px; width: 100%;
+    border-radius: 12px; padding: 12px 14px; width: 100%; cursor: pointer;
   }
   button.primary { background: var(--gold); color: #1a1405; border: 0; font-weight: 700; font-size: 17px; }
   .small { font-size: 13px; }
+  a { color: var(--gold); }
+
   #hud { position: fixed; inset: 0; z-index: 3; pointer-events: none; }
-  #hud .top { position: absolute; top: calc(10px + env(safe-area-inset-top, 0px)); left: 12px; right: 12px; pointer-events: auto; }
-  #hud .panel {
+  #prompt {
+    position: absolute; left: 16px; right: 16px; top: calc(16px + env(safe-area-inset-top, 0px));
+    text-align: center; font-size: 18px; font-weight: 700; text-shadow: 0 1px 8px #000;
+  }
+  #hint { position: absolute; left: 16px; right: 16px; top: calc(52px + env(safe-area-inset-top, 0px));
+    text-align: center; font-size: 14px; color: var(--gold); text-shadow: 0 1px 8px #000; }
+  .panel {
     position: absolute; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom, 0px));
     background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
-    padding: 12px 14px; display: grid; gap: 4px; pointer-events: auto;
+    padding: 12px 14px; display: grid; gap: 6px; pointer-events: auto;
     backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+    max-height: 70vh; overflow-y: auto;
   }
-  #tname { font-weight: 700; font-size: 17px; color: var(--gold); }
-  #tinfo, #tnear { font-size: 14px; }
   #status { font-size: 12px; color: var(--muted); }
-  details { margin-top: 4px; font-size: 13px; color: var(--muted); }
+  details { font-size: 13px; color: var(--muted); }
   details label { display: block; margin-top: 8px; }
   input[type=range] { width: 100%; }
+
+  #card { z-index: 6; }
+  .pill { justify-self: start; font-size: 12px; padding: 3px 10px; border-radius: 999px; border: 1px solid currentColor; }
+  .tier-common { color: #9aa0b5; } .tier-uncommon { color: #7fd0a6; } .tier-rare { color: #73a9ff; }
+  .tier-epic { color: #c38bff; } .tier-legendary { color: #ffcf6b; }
+  dl { margin: 4px 0; display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 14px; }
+  dt { color: var(--muted); }
+  dd { margin: 0; overflow-wrap: anywhere; }
+  .mono { font-family: ui-monospace, "SF Mono", Consolas, monospace; font-size: 12.5px; }
+  .row { display: flex; gap: 8px; }
+  #flash { position: fixed; inset: 0; z-index: 4; background: #fff; opacity: 0; pointer-events: none; transition: opacity 0.6s ease; }
   #rotate { position: fixed; inset: 0; z-index: 9; display: grid; place-items: center; background: var(--bg); font-size: 18px; }
   [hidden] { display: none !important; }
 </style>
@@ -55,21 +72,24 @@
 <body>
 <video id="cam" playsinline muted autoplay></video>
 <canvas id="sky"></canvas>
+<div id="flash"></div>
 
 <div id="start" class="screen">
-  <h1>Encuentra tu estrella</h1>
-  <p>Prueba: apunta el móvil al cielo y te guiamos hasta una estrella real del catálogo Gaia.</p>
-  <p class="small">Para comprobar la precisión, apunta primero a una estrella brillante que veas (por ejemplo Sirio) y mira si su etiqueta cae encima.</p>
-  <button id="go" class="primary" type="button">Empezar</button>
+  <h1>Reclama tu estrella</h1>
+  <p>Sal a un lugar abierto. Vas a recorrer el cielo con el móvil y, cuando quieras, tocar la pantalla: la estrella real que esté en tu mira será tuya.</p>
+  <button id="go" class="primary" type="button" disabled>Cargando el catálogo de estrellas…</button>
   <p class="small">Te pedirá permiso para la cámara, la ubicación y los sensores de movimiento. Nada sale del móvil.</p>
 </div>
 
 <div id="hud" hidden>
-  <div class="top"><select id="target" aria-label="Estrella a buscar"></select></div>
-  <div class="panel">
-    <div id="tname"></div>
-    <div id="tinfo"></div>
-    <div id="tnear"></div>
+  <div id="prompt"></div>
+  <div id="hint"></div>
+  <div class="panel" id="hudPanel">
+    <div id="hudInfo"></div>
+    <div class="row" id="hudButtons" hidden>
+      <button type="button" id="openCard">Ver ficha</button>
+      <button type="button" id="again">Reclamar otra</button>
+    </div>
     <div id="status"></div>
     <details>
       <summary>Ajustes de precisión</summary>
@@ -81,17 +101,26 @@
   </div>
 </div>
 
+<div id="card" class="screen" hidden>
+  <p class="small">¡Esta es tu estrella!</p>
+  <h2 id="cTitle"></h2>
+  <span id="cTier" class="pill"></span>
+  <dl id="cRows"></dl>
+  <p class="small" id="cNote"></p>
+  <button id="cClose" class="primary" type="button">Buscarla en el cielo</button>
+</div>
+
 <div id="rotate" hidden>Pon el móvil en vertical</div>
 
 <script>
 (() => {
   const D2R = Math.PI / 180, R2D = 180 / Math.PI;
+  const SWEEP_NEEDED = 70;   // degrees of side-to-side movement before the claim unlocks
+  const CLAIM_RADIUS = 5;    // degrees around the reticle where a star can be claimed
+  const HOST_RADIUS = 2.5;   // degrees: a confirmed-planet star this close gives a legendary chance
+  const HOST_CHANCE = 0.3;
+  const STORE_KEY = 'reclama-tu-estrella-v1';
 
-  // Gaia DR3 stars assigned by the Pocket Planets name hash, plus bright reference stars (J2000).
-  const TARGETS = [
-    { id: 'fernando', name: 'Estrella de Fernando', detail: 'Gaia DR3 2938721734658079872 · 711 años luz · magnitud 18,3', ra: 98.5921, dec: -20.9355, gaia: true },
-    { id: 'martina', name: 'Estrella de Martina', detail: 'Gaia DR3 5860410174531446784 · 1.491 años luz · magnitud 16,9', ra: 180.7507, dec: -67.0833, gaia: true },
-  ];
   const BRIGHT = [
     ['Sirio', 101.287, -16.716], ['Canopo', 95.988, -52.696], ['Arturo', 213.915, 19.182], ['Vega', 279.234, 38.784],
     ['Capella', 79.172, 45.998], ['Rigel', 78.634, -8.202], ['Proción', 114.825, 5.225], ['Betelgeuse', 88.793, 7.407],
@@ -99,53 +128,70 @@
     ['Pólux', 116.329, 28.026], ['Deneb', 310.358, 45.280], ['Régulo', 152.093, 11.967], ['Polar', 37.955, 89.264],
     ['Fomalhaut', 344.413, -29.622], ['Achernar', 24.429, -57.237], ['Ácrux', 186.650, -63.099],
   ].map(([name, ra, dec]) => ({ name, ra, dec }));
-  BRIGHT.forEach(b => TARGETS.push({ id: 'b-' + b.name, name: b.name, detail: 'Estrella brillante de referencia, visible a simple vista', ra: b.ra, dec: b.dec }));
 
   const $ = id => document.getElementById(id);
-  const sel = $('target');
-  TARGETS.forEach(t => {
-    const o = document.createElement('option');
-    o.value = t.id;
-    o.textContent = t.gaia ? t.name : 'Referencia: ' + t.name;
-    sel.append(o);
-  });
-
   const state = {
     lat: 40.4168, lon: -3.7038, geo: 'pendiente',
     sa: 0, ca: 1, b: 90, g: 0, haveOrient: false, absolute: false,
-    offset: 0, fov: 62, target: TARGETS[0],
+    offset: 0, fov: 62, sweep: 0, lastAz: null, pointAlt: 0, pointAz: 0, center: [1, 0, 0],
+    claim: null, phase: 'scan',
   };
+  let STARS = [], HOSTS = [];
+
+  // ---------- Catalog ----------
+  const unit = (ra, dec) => [Math.cos(dec * D2R) * Math.cos(ra * D2R), Math.cos(dec * D2R) * Math.sin(ra * D2R), Math.sin(dec * D2R)];
+  fetch('sky.json')
+    .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+    .then(d => {
+      STARS = d.stars.map(([id, ra, dec, ly, gmag, teff]) => ({ id, ra, dec, ly, gmag, teff, u: unit(ra, dec) }));
+      HOSTS = d.hosts.map(h => ({ ...h, u: unit(h.ra, h.dec) }));
+      $('go').disabled = false;
+      $('go').textContent = 'Empezar';
+    })
+    .catch(() => { $('go').textContent = 'No se pudo cargar el catálogo. Recarga la página.'; });
+
+  try { state.claim = JSON.parse(localStorage.getItem(STORE_KEY)); } catch (_) { state.claim = null; }
+  if (state.claim) state.phase = 'claimed';
 
   // ---------- Astronomy ----------
-  function lstDeg(date, lon) {
+  function lstDeg(date) {
     const jd = date.getTime() / 86400000 + 2440587.5;
-    const d = jd - 2451545.0;
-    return (((280.46061837 + 360.98564736629 * d + lon) % 360) + 360) % 360;
+    return (((280.46061837 + 360.98564736629 * (jd - 2451545.0) + state.lon) % 360) + 360) % 360;
   }
-  function altAz(ra, dec, date) {
-    const H = (lstDeg(date, state.lon) - ra) * D2R;
-    const phi = state.lat * D2R, del = dec * D2R;
+  function altAz(ra, dec, lst) {
+    const H = (lst - ra) * D2R, phi = state.lat * D2R, del = dec * D2R;
     const alt = Math.asin(Math.sin(phi) * Math.sin(del) + Math.cos(phi) * Math.cos(del) * Math.cos(H));
     const az = Math.atan2(Math.sin(H), Math.cos(H) * Math.sin(phi) - Math.tan(del) * Math.cos(phi));
     return { alt: alt * R2D, az: ((az * R2D + 180) % 360 + 360) % 360 };
   }
-  function nextRise(t) {
-    const now = Date.now();
-    let prev = altAz(t.ra, t.dec, new Date(now)).alt;
-    for (let m = 5; m <= 24 * 60; m += 5) {
-      const d = new Date(now + m * 60000);
-      const a = altAz(t.ra, t.dec, d).alt;
-      if (prev <= 0 && a > 0) return d;
-      prev = a;
-    }
-    return null;
+  function raDec(alt, az, lst) {
+    const h = alt * D2R, A = az * D2R, phi = state.lat * D2R;
+    const dec = Math.asin(Math.sin(phi) * Math.sin(h) + Math.cos(phi) * Math.cos(h) * Math.cos(A));
+    const H = Math.atan2(-Math.sin(A) * Math.cos(h), Math.cos(phi) * Math.sin(h) - Math.sin(phi) * Math.cos(h) * Math.cos(A));
+    return { ra: ((lst - H * R2D) % 360 + 360) % 360, dec: dec * R2D };
   }
-  function angSep(a, b) {
-    const c = Math.sin(a.dec * D2R) * Math.sin(b.dec * D2R) + Math.cos(a.dec * D2R) * Math.cos(b.dec * D2R) * Math.cos((a.ra - b.ra) * D2R);
-    return Math.acos(Math.min(1, Math.max(-1, c))) * R2D;
-  }
-  const DIRS = ['N', 'NE', 'E', 'SE', 'S', 'SO', 'O', 'NO'];
+  const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const sepDeg = (a, b) => Math.acos(Math.min(1, Math.max(-1, dot(a, b)))) * R2D;
+  const DIRS = ['norte', 'noreste', 'este', 'sureste', 'sur', 'suroeste', 'oeste', 'noroeste'];
   const dirName = az => DIRS[Math.round(az / 45) % 8];
+
+  function starClass(teff, giant) {
+    if (giant) return teff < 4000 ? 'Gigante roja (M)' : teff < 5200 ? 'Gigante naranja (K)' : 'Gigante amarilla (G)';
+    if (teff >= 30000) return 'Estrella azul (O)';
+    if (teff >= 10000) return 'Estrella blanco-azulada (B)';
+    if (teff >= 7500) return 'Estrella blanca (A)';
+    if (teff >= 6000) return 'Estrella blanco-amarillenta (F)';
+    if (teff >= 5200) return 'Enana amarilla, como el Sol (G)';
+    if (teff >= 3700) return 'Enana naranja (K)';
+    return 'Enana roja (M)';
+  }
+  function starRGB(kelvin) {
+    const t = Math.min(40000, Math.max(1000, kelvin)) / 100;
+    let r, g, b;
+    if (t <= 66) { r = 255; g = 99.47 * Math.log(t) - 161.12; b = t <= 19 ? 0 : 138.52 * Math.log(t - 10) - 305.04; }
+    else { r = 329.7 * Math.pow(t - 60, -0.1332); g = 288.12 * Math.pow(t - 60, -0.0755); b = 255; }
+    return `rgb(${[r, g, b].map(v => Math.round(Math.min(255, Math.max(0, v)))).join(',')})`;
+  }
 
   // ---------- Device orientation ----------
   function rotMatrix(aDeg, bDeg, gDeg) {
@@ -158,24 +204,16 @@
     ];
   }
   // World frame: x = East, y = North, z = Up. Device frame: x right, y top, z out of the screen.
-  function toDevice(R, w) {
-    return [
-      R[0][0] * w[0] + R[1][0] * w[1] + R[2][0] * w[2],
-      R[0][1] * w[0] + R[1][1] * w[1] + R[2][1] * w[2],
-      R[0][2] * w[0] + R[1][2] * w[1] + R[2][2] * w[2],
-    ];
-  }
-  function worldVec(alt, az) {
-    const a = alt * D2R, z = az * D2R;
-    return [Math.cos(a) * Math.sin(z), Math.cos(a) * Math.cos(z), Math.sin(a)];
-  }
+  const toDevice = (R, w) => [
+    R[0][0] * w[0] + R[1][0] * w[1] + R[2][0] * w[2],
+    R[0][1] * w[0] + R[1][1] * w[1] + R[2][1] * w[2],
+    R[0][2] * w[0] + R[1][2] * w[1] + R[2][2] * w[2],
+  ];
+  const worldVec = (alt, az) => [Math.cos(alt * D2R) * Math.sin(az * D2R), Math.cos(alt * D2R) * Math.cos(az * D2R), Math.sin(alt * D2R)];
 
   function onOrient(e, absolute) {
     let a = e.alpha;
-    if (typeof e.webkitCompassHeading === 'number' && !isNaN(e.webkitCompassHeading)) {
-      a = 360 - e.webkitCompassHeading;
-      absolute = true;
-    }
+    if (typeof e.webkitCompassHeading === 'number' && !isNaN(e.webkitCompassHeading)) { a = 360 - e.webkitCompassHeading; absolute = true; }
     if (a == null || e.beta == null || e.gamma == null) return;
     const k = state.haveOrient ? 0.25 : 1;
     state.sa += (Math.sin(a * D2R) - state.sa) * k;
@@ -192,68 +230,139 @@
       if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
         await DeviceOrientationEvent.requestPermission();
       }
-    } catch (_) { /* denied: handled by the status line */ }
-    if ('ondeviceorientationabsolute' in window) {
-      window.addEventListener('deviceorientationabsolute', e => onOrient(e, true));
-    } else {
-      window.addEventListener('deviceorientation', e => onOrient(e, e.absolute === true));
-    }
+    } catch (_) { /* reported in the status line */ }
+    if ('ondeviceorientationabsolute' in window) window.addEventListener('deviceorientationabsolute', e => onOrient(e, true));
+    else window.addEventListener('deviceorientation', e => onOrient(e, e.absolute === true));
 
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
-        p => { state.lat = p.coords.latitude; state.lon = p.coords.longitude; state.geo = 'ok'; refreshInfo(); },
-        () => { state.geo = 'denegada'; refreshInfo(); },
+        p => { state.lat = p.coords.latitude; state.lon = p.coords.longitude; state.geo = 'ok'; },
+        () => { state.geo = 'denegada'; },
         { enableHighAccuracy: false, timeout: 15000 }
       );
     } else {
       state.geo = 'no disponible';
     }
-
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
-      $('cam').srcObject = stream;
-    } catch (_) {
-      state.camError = true;
-    }
+      $('cam').srcObject = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
+    } catch (_) { state.camError = true; }
 
     $('start').hidden = true;
     $('hud').hidden = false;
-    refreshInfo();
     requestAnimationFrame(draw);
   });
 
-  sel.addEventListener('change', () => { state.target = TARGETS.find(t => t.id === sel.value); refreshInfo(); });
   $('offset').addEventListener('input', e => { state.offset = +e.target.value; $('offsetVal').textContent = state.offset + '°'; });
   $('fov').addEventListener('input', e => { state.fov = +e.target.value; $('fovVal').textContent = state.fov + '°'; });
+  $('openCard').addEventListener('click', e => { e.stopPropagation(); showCard(); });
+  $('again').addEventListener('click', e => {
+    e.stopPropagation();
+    state.claim = null;
+    try { localStorage.removeItem(STORE_KEY); } catch (_) {}
+    state.phase = 'scan'; state.sweep = 0; state.lastAz = null;
+  });
+  $('cClose').addEventListener('click', () => { $('card').hidden = true; });
 
-  function refreshInfo() {
-    const t = state.target;
-    const p = altAz(t.ra, t.dec, new Date());
-    $('tname').textContent = t.name;
-    let info = `${t.detail}. `;
-    if (p.alt > 0) {
-      info += `Ahora está a ${Math.round(p.alt)}° sobre el horizonte, hacia el ${dirName(p.az)} (${Math.round(p.az)}°).`;
-    } else {
-      const r = nextRise(t);
-      info += r
-        ? `Ahora está bajo el horizonte. Sale hoy a las ${r.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}.`
-        : 'Desde tu ubicación nunca sube sobre el horizonte.';
-    }
-    $('tinfo').textContent = info;
-    if (t.gaia) {
-      let best = null;
-      BRIGHT.forEach(b => { const s = angSep(t, b); if (!best || s < best.s) best = { b, s }; });
-      $('tnear').textContent = `No se ve a simple vista. Está a ${Math.round(best.s)}° de ${best.b.name}, la estrella brillante más cercana.`;
-    } else {
-      $('tnear').textContent = '';
-    }
-    const parts = [];
-    parts.push(state.geo === 'ok' ? 'Ubicación: OK' : `Ubicación ${state.geo} (uso Madrid)`);
-    parts.push(state.haveOrient ? (state.absolute ? 'Brújula: OK' : 'Brújula relativa (puede apuntar mal)') : 'Brújula: sin datos');
-    if (state.camError) parts.push('Cámara no disponible');
-    $('status').textContent = parts.join(' · ');
+  // Tap anywhere on the sky (outside the panel) to claim.
+  document.addEventListener('pointerup', e => {
+    if ($('hud').hidden || !$('card').hidden || $('hudPanel').contains(e.target)) return;
+    if (state.phase !== 'ready') return;
+    claim();
+  });
+
+  // ---------- Claim ----------
+  function categorize(s) {
+    const absMag = s.gmag - 5 * Math.log10(s.ly / 3.26156) + 5;
+    if (s.gmag < 6) return ['legendary', 'Visible a simple vista', false];
+    if (s.ly < 150) return ['epic', 'A menos de 150 años luz de la Tierra', false];
+    if (absMag < 2 && s.teff < 5600) return ['rare', 'Estrella gigante', true];
+    if (s.teff >= 7500) return ['rare', 'Estrella caliente blanco-azulada', false];
+    if (s.teff >= 5200 && s.teff < 6000) return ['uncommon', 'Estrella similar al Sol', false];
+    return ['common', 'Estrella común de la galaxia', false];
   }
-  setInterval(() => { if (!$('hud').hidden) refreshInfo(); }, 5000);
+
+  function claim() {
+    const c = state.center;
+    const hostsNear = HOSTS.filter(h => sepDeg(h.u, c) <= HOST_RADIUS);
+    let result;
+    if (hostsNear.length && Math.random() < HOST_CHANCE) {
+      const h = hostsNear[Math.floor(Math.random() * hostsNear.length)];
+      const pl = h.p[Math.floor(Math.random() * h.p.length)];
+      result = { kind: 'host', title: h.n, starId: h.g, ra: h.ra, dec: h.dec, ly: h.ly, teff: h.t, gmag: null,
+        tier: 'legendary', why: 'Tiene un planeta confirmado', giant: false,
+        planet: { name: pl[0], rade: pl[1], eqt: pl[2], year: pl[4], facility: pl[5] }, planets: h.p.length };
+    } else {
+      let cands = STARS.filter(s => sepDeg(s.u, c) <= CLAIM_RADIUS);
+      if (!cands.length) cands = STARS.slice().sort((a, b) => dot(b.u, c) - dot(a.u, c)).slice(0, 5);
+      const s = cands[Math.floor(Math.random() * cands.length)];
+      const [tier, why, giant] = categorize(s);
+      result = { kind: 'gaia', title: 'Gaia DR3 ' + s.id, starId: s.id, ra: s.ra, dec: s.dec, ly: s.ly, teff: s.teff, gmag: s.gmag, tier, why, giant, candidates: cands.length };
+    }
+    result.claimedAt = new Date().toISOString();
+    result.lat = state.lat; result.lon = state.lon; result.geo = state.geo;
+    result.alt = state.pointAlt; result.az = state.pointAz;
+    result.hostsInView = hostsNear.length;
+    state.claim = result;
+    state.phase = 'claimed';
+    try { localStorage.setItem(STORE_KEY, JSON.stringify(result)); } catch (_) {}
+
+    if (navigator.vibrate) navigator.vibrate([40, 80, 160]);
+    const fl = $('flash');
+    fl.style.transition = 'none'; fl.style.opacity = '0.85';
+    requestAnimationFrame(() => { fl.style.transition = 'opacity 0.8s ease'; fl.style.opacity = '0'; });
+    setTimeout(showCard, 650);
+  }
+
+  const fmt = (n, d = 0) => Number(n).toLocaleString('es-ES', { minimumFractionDigits: d, maximumFractionDigits: d });
+  const TIER = { common: 'Común', uncommon: 'Poco común', rare: 'Rara', epic: 'Épica', legendary: 'Legendaria' };
+
+  function showCard() {
+    const c = state.claim;
+    if (!c) return;
+    $('cTitle').textContent = c.kind === 'host' ? `${c.title} y su planeta ${c.planet.name}` : c.title;
+    $('cTier').className = 'pill tier-' + c.tier;
+    $('cTier').textContent = `${TIER[c.tier]} · ${c.why}`;
+    const when = new Date(c.claimedAt);
+    const place = c.geo === 'ok'
+      ? `${fmt(Math.abs(c.lat), 2)}° ${c.lat >= 0 ? 'N' : 'S'}, ${fmt(Math.abs(c.lon), 2)}° ${c.lon >= 0 ? 'E' : 'O'}`
+      : 'ubicación no disponible (calculado para Madrid)';
+    const rows = [
+      ['Tipo', `${starClass(c.teff, c.giant)} · ${fmt(c.teff)} K`],
+      ['Distancia', `${fmt(c.ly)} años luz de la Tierra`],
+    ];
+    if (c.gmag != null) rows.push(['Brillo', `Magnitud ${fmt(c.gmag, 1)} ${c.gmag < 6 ? '(visible a simple vista)' : c.gmag < 9 ? '(con binoculares)' : '(con telescopio)'}`]);
+    if (c.kind === 'host') {
+      const p = c.planet;
+      const bits = [];
+      if (p.rade != null) bits.push(`${fmt(p.rade, 2)} × la Tierra`);
+      if (p.eqt != null) bits.push(`unos ${fmt(p.eqt - 273)} °C`);
+      if (p.year) bits.push(`descubierto en ${p.year}`);
+      rows.push(['Planeta', `${p.name}${bits.length ? ' · ' + bits.join(' · ') : ''}`]);
+      if (c.planets > 1) rows.push(['Sistema', `${c.planets} planetas conocidos`]);
+    }
+    rows.push(['Reclamada', when.toLocaleString('es-ES', { dateStyle: 'long', timeStyle: 'short' })]);
+    rows.push(['Desde', place]);
+    rows.push(['Mirando hacia', `el ${dirName(c.az)}, a ${Math.round(c.alt)}° sobre el horizonte`]);
+    const dl = $('cRows');
+    dl.replaceChildren();
+    rows.forEach(([k, v]) => {
+      const dt = document.createElement('dt'); dt.textContent = k;
+      const dd = document.createElement('dd'); dd.textContent = v;
+      dl.append(dt, dd);
+    });
+    const dt = document.createElement('dt'); dt.textContent = 'Comprobar';
+    const dd = document.createElement('dd');
+    const a = document.createElement('a');
+    a.target = '_blank'; a.rel = 'noopener';
+    if (c.kind === 'host') { a.href = 'https://exoplanetarchive.ipac.caltech.edu/overview/' + encodeURIComponent(c.title); a.textContent = 'Ver en el archivo de la NASA ↗'; }
+    else { a.href = 'https://simbad.cds.unistra.fr/simbad/sim-id?Ident=' + encodeURIComponent(c.title); a.textContent = 'Ver en el catálogo SIMBAD ↗'; }
+    dd.append(a);
+    dl.append(dt, dd);
+    $('cNote').textContent = c.kind === 'host'
+      ? 'Ganaste la jugada legendaria: una estrella con un planeta real, confirmado por la NASA.'
+      : `Elegida al azar entre ${fmt(c.candidates)} estrellas reales de tu mira. Prueba: no se comprueba si otra persona ya la reclamó.`;
+    $('card').hidden = false;
+  }
 
   // ---------- Draw ----------
   const cv = $('sky');
@@ -264,101 +373,183 @@
     if (v[2] >= -0.02) return { front: false, v };
     return { front: true, v, x: W / 2 + f * v[0] / -v[2], y: H / 2 - f * v[1] / -v[2] };
   }
+  function arrow(v, W, H, color, label, pulse) {
+    let dx = v[0], dy = -v[1];
+    if (Math.hypot(dx, dy) < 1e-3) { dx = 0; dy = 1; }
+    const ang = Math.atan2(dy, dx);
+    const cx = W / 2 + Math.cos(ang) * W * 0.36, cy = H / 2 + Math.sin(ang) * H * 0.28;
+    ctx.save(); ctx.translate(cx, cy); ctx.rotate(ang);
+    ctx.globalAlpha = 0.65 + 0.35 * pulse;
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.moveTo(22, 0); ctx.lineTo(-12, -14); ctx.lineTo(-6, 0); ctx.lineTo(-12, 14); ctx.closePath(); ctx.fill();
+    ctx.restore();
+    if (label) {
+      ctx.font = '13px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = color;
+      ctx.fillText(label, cx, cy + 30);
+    }
+  }
 
+  let lastInfo = 0;
   function draw(now) {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const W = innerWidth, H = innerHeight;
     $('rotate').hidden = H >= W;
-    if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) {
-      cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
-    }
+    if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, W, H);
+    const pulse = 0.5 + 0.5 * Math.sin(now / 300);
 
     if (!state.haveOrient) {
-      ctx.fillStyle = '#eef0f7';
-      ctx.font = '16px system-ui, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText('Esperando los sensores de movimiento…', W / 2, H / 2);
+      $('prompt').textContent = 'Esperando los sensores de movimiento…';
       requestAnimationFrame(draw);
       return;
     }
 
-    const a = Math.atan2(state.sa, state.ca) * R2D + state.offset;
-    const R = rotMatrix(a, state.b, state.g);
+    const R = rotMatrix(Math.atan2(state.sa, state.ca) * R2D + state.offset, state.b, state.g);
     const f = (H / 2) / Math.tan((state.fov / 2) * D2R);
-    const date = new Date();
+    const lst = lstDeg(new Date());
 
-    // Horizon line and cardinal points.
-    ctx.strokeStyle = 'rgba(120, 200, 255, 0.45)';
-    ctx.lineWidth = 1.5;
+    // Where the camera points.
+    const d = [-R[0][2], -R[1][2], -R[2][2]];
+    state.pointAlt = Math.asin(Math.max(-1, Math.min(1, d[2]))) * R2D;
+    state.pointAz = ((Math.atan2(d[0], d[1]) * R2D) % 360 + 360) % 360;
+    const eq = raDec(state.pointAlt, state.pointAz, lst);
+    state.center = unit(eq.ra, eq.dec);
+
+    // Horizon and cardinal points.
+    ctx.strokeStyle = 'rgba(120, 200, 255, 0.45)'; ctx.lineWidth = 1.5;
     ctx.beginPath();
     let pen = false;
     for (let az = 0; az <= 360; az += 3) {
       const p = project(R, 0, az, W, H, f);
-      if (p.front && Math.abs(p.x) < W * 3 && Math.abs(p.y) < H * 3) {
-        pen ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y);
-        pen = true;
-      } else {
-        pen = false;
-      }
+      if (p.front && Math.abs(p.x) < W * 3 && Math.abs(p.y) < H * 3) { pen ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y); pen = true; } else pen = false;
     }
     ctx.stroke();
-    ctx.font = 'bold 15px system-ui, sans-serif';
-    ctx.textAlign = 'center';
-    [['N', 0], ['E', 90], ['S', 180], ['O', 270]].forEach(([label, az]) => {
-      const p = project(R, 0, az, W, H, f);
-      if (p.front) { ctx.fillStyle = 'rgba(120, 200, 255, 0.9)'; ctx.fillText(label, p.x, p.y - 8); }
-    });
+    ctx.font = 'bold 15px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(120, 200, 255, 0.9)';
+    [['N', 0], ['E', 90], ['S', 180], ['O', 270]].forEach(([l, az]) => { const p = project(R, 0, az, W, H, f); if (p.front) ctx.fillText(l, p.x, p.y - 8); });
+
+    // Real Gaia stars in the field of view (the candidates), drawn faintly.
+    const fieldCos = Math.cos((state.fov / 2 + 5) * D2R);
+    for (let i = 0; i < STARS.length; i++) {
+      const s = STARS[i];
+      if (dot(s.u, state.center) < fieldCos) continue;
+      const h = altAz(s.ra, s.dec, lst);
+      if (h.alt < 0) continue;
+      const p = project(R, h.alt, h.az, W, H, f);
+      if (!p.front) continue;
+      ctx.globalAlpha = state.phase === 'claimed' ? 0.25 : 0.35 + 0.35 * Math.sin(now / 400 + i);
+      ctx.fillStyle = starRGB(s.teff);
+      ctx.fillRect(p.x - 1, p.y - 1, 2, 2);
+    }
+    ctx.globalAlpha = 1;
 
     // Bright reference stars.
-    ctx.font = '13px system-ui, sans-serif';
-    ctx.textAlign = 'left';
+    ctx.font = '13px system-ui, sans-serif'; ctx.textAlign = 'left';
     BRIGHT.forEach(b => {
-      const h = altAz(b.ra, b.dec, date);
+      const h = altAz(b.ra, b.dec, lst);
+      if (h.alt < 0) return;
       const p = project(R, h.alt, h.az, W, H, f);
       if (!p.front || p.x < -50 || p.x > W + 50 || p.y < -50 || p.y > H + 50) return;
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
-      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)'; ctx.lineWidth = 1.5;
       ctx.beginPath(); ctx.arc(p.x, p.y, 7, 0, Math.PI * 2); ctx.stroke();
-      ctx.fillStyle = h.alt > 0 ? 'rgba(255, 255, 255, 0.95)' : 'rgba(255, 255, 255, 0.45)';
-      ctx.fillText(b.name + (h.alt > 0 ? '' : ' (bajo el horizonte)'), p.x + 11, p.y + 4);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+      ctx.fillText(b.name, p.x + 11, p.y + 4);
     });
 
-    // Target.
-    const t = state.target;
-    const th = altAz(t.ra, t.dec, date);
-    const p = project(R, th.alt, th.az, W, H, f);
-    const pulse = 0.5 + 0.5 * Math.sin(now / 300);
-    if (p.front && p.x > 20 && p.x < W - 20 && p.y > 70 && p.y < H - 150) {
-      ctx.strokeStyle = '#ffcf6b';
-      ctx.lineWidth = 2.5;
-      ctx.beginPath(); ctx.arc(p.x, p.y, 16 + pulse * 8, 0, Math.PI * 2); ctx.stroke();
-      ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI * 2); ctx.fillStyle = '#ffcf6b'; ctx.fill();
-      ctx.font = 'bold 15px system-ui, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText(t.gaia ? 'Tu estrella está aquí' : t.name, p.x, p.y - 30);
-      if (th.alt < 0) { ctx.font = '13px system-ui, sans-serif'; ctx.fillText('(ahora bajo el horizonte)', p.x, p.y + 40); }
+    if (state.phase === 'claimed' && state.claim) {
+      drawClaimed(R, W, H, f, lst, pulse);
     } else {
-      // Off screen: arrow on an ellipse around the center pointing toward the target.
-      let dx = p.v[0], dy = -p.v[1];
-      if (Math.hypot(dx, dy) < 1e-3) { dx = 0; dy = 1; }
-      const ang = Math.atan2(dy, dx);
-      const cx = W / 2 + Math.cos(ang) * W * 0.36;
-      const cy = H / 2 - 40 + Math.sin(ang) * H * 0.3;
-      ctx.save();
-      ctx.translate(cx, cy);
-      ctx.rotate(ang);
-      ctx.fillStyle = `rgba(255, 207, 107, ${0.65 + 0.35 * pulse})`;
-      ctx.beginPath(); ctx.moveTo(22, 0); ctx.lineTo(-12, -14); ctx.lineTo(-6, 0); ctx.lineTo(-12, 14); ctx.closePath(); ctx.fill();
-      ctx.restore();
-      ctx.font = '14px system-ui, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillStyle = '#ffcf6b';
-      ctx.fillText('Gira el móvil hacia la flecha', W / 2, H / 2 - 40);
+      drawScan(R, W, H, f, lst, pulse);
     }
 
+    if (now - lastInfo > 1000) { lastInfo = now; updateStatus(); }
     requestAnimationFrame(draw);
+  }
+
+  function drawScan(R, W, H, f, lst, pulse) {
+    // Count side-to-side movement while pointing at the sky.
+    if (state.pointAlt > 10) {
+      if (state.lastAz != null) {
+        let dAz = Math.abs(state.pointAz - state.lastAz);
+        if (dAz > 180) dAz = 360 - dAz;
+        if (dAz < 20) state.sweep = Math.min(SWEEP_NEEDED, state.sweep + dAz * Math.cos(state.pointAlt * D2R));
+      }
+      state.lastAz = state.pointAz;
+    } else {
+      state.lastAz = null;
+    }
+    const pointingUp = state.pointAlt > 10;
+    const progress = state.sweep / SWEEP_NEEDED;
+    state.phase = pointingUp && progress >= 1 ? 'ready' : 'scan';
+
+    // Reticle: the claim zone, with a progress ring for the sweep.
+    const rr = f * Math.tan(CLAIM_RADIUS * D2R);
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+    ctx.beginPath(); ctx.arc(W / 2, H / 2, rr, 0, Math.PI * 2); ctx.stroke();
+    ctx.strokeStyle = '#ffcf6b';
+    ctx.lineWidth = state.phase === 'ready' ? 3 + pulse * 2 : 3;
+    ctx.beginPath(); ctx.arc(W / 2, H / 2, rr, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * progress); ctx.stroke();
+
+    let prompt;
+    if (!pointingUp) prompt = 'Apunta el móvil al cielo';
+    else if (progress < 1) prompt = 'Mueve el móvil de lado a lado por el cielo…';
+    else prompt = 'Toca la pantalla para reclamar tu estrella';
+    $('prompt').textContent = prompt;
+
+    // Confirmed-planet hunt.
+    let nearest = null;
+    for (const h of HOSTS) {
+      const s = sepDeg(h.u, state.center);
+      if (!nearest || s < nearest.s) nearest = { h, s };
+    }
+    let hint = '';
+    if (nearest && pointingUp) {
+      if (nearest.s <= HOST_RADIUS) {
+        hint = '¡Señal de un planeta confirmado en tu mira! Si tocas ahora, puede ser tuyo.';
+      } else if (nearest.s <= 25) {
+        hint = `Hay una estrella con planeta confirmado a ${Math.round(nearest.s)}°. Sigue la flecha dorada.`;
+        const hh = altAz(nearest.h.ra, nearest.h.dec, lst);
+        const p = project(R, hh.alt, hh.az, W, H, f);
+        if (p.front && p.x > 0 && p.x < W && p.y > 0 && p.y < H) {
+          ctx.strokeStyle = `rgba(255, 207, 107, ${0.4 + 0.5 * pulse})`; ctx.lineWidth = 1.5;
+          ctx.beginPath(); ctx.arc(p.x, p.y, 10, 0, Math.PI * 2); ctx.stroke();
+        } else {
+          arrow(p.v, W, H, '#ffcf6b', 'planeta', pulse);
+        }
+      }
+    }
+    $('hint').textContent = hint;
+    $('hudButtons').hidden = true;
+    $('hudInfo').textContent = 'Las estrellas que ves parpadear son reales (Gaia DR3). Cualquiera dentro del círculo puede ser la tuya.';
+  }
+
+  function drawClaimed(R, W, H, f, lst, pulse) {
+    const c = state.claim;
+    const h = altAz(c.ra, c.dec, lst);
+    const p = project(R, h.alt, h.az, W, H, f);
+    if (p.front && p.x > 20 && p.x < W - 20 && p.y > 90 && p.y < H - 170) {
+      ctx.strokeStyle = '#ffcf6b'; ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.arc(p.x, p.y, 16 + pulse * 8, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI * 2); ctx.fillStyle = '#ffcf6b'; ctx.fill();
+      ctx.font = 'bold 15px system-ui, sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText('Tu estrella', p.x, p.y - 30);
+      $('prompt').textContent = h.alt > 0 ? 'Ahí está tu estrella' : 'Tu estrella está ahora bajo el horizonte';
+    } else {
+      arrow(p.v, W, H, '#ffcf6b', '', pulse);
+      $('prompt').textContent = 'Gira el móvil hacia la flecha';
+    }
+    $('hint').textContent = '';
+    $('hudButtons').hidden = false;
+    $('hudInfo').textContent = `${c.kind === 'host' ? c.title + ' · planeta ' + c.planet.name : c.title} · ${fmt(c.ly)} años luz`;
+  }
+
+  function updateStatus() {
+    const parts = [];
+    parts.push(state.geo === 'ok' ? 'Ubicación: OK' : `Ubicación ${state.geo} (uso Madrid)`);
+    parts.push(state.absolute ? 'Brújula: OK' : 'Brújula relativa (puede apuntar mal)');
+    if (state.camError) parts.push('Cámara no disponible');
+    $('status').textContent = parts.join(' · ');
   }
 })();
 </script>
